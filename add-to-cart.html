@@ -1,19 +1,77 @@
 <!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Adding to Cart…</title></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Adding to Cart…</title>
+</head>
 <body>
-<script>
-(async()=>{
-  const p=new URLSearchParams(window.location.search),
-        productId=Number(p.get('pid')),
-        sku=p.get('sku'),
-        me=await fetch('/api/storefront/customers/me',{credentials:'include'}).then(r=>r.json()),
-        inv=await fetch('https://abc.irishtitan.cloud/api/vault/inventory-check?sku:in='+sku).then(r=>r.json());
-  if(!inv[0]?.has_inventory) return alert('Out of stock');
-  const cart=await fetch('/api/storefront/carts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({lineItems:[{productId,quantity:1}]})}).then(r=>r.json());
-  await fetch('https://abc.irishtitan.cloud/api/vault/cart-reserve',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'},body:JSON.stringify({cart_id:cart.id,customer_id:me.data.id,customer_email:me.data.email,product_id:String(productId),sku,quantity:1})});
-  window.location.href='/cart.php';
-})();
-</script>
+  <p>Adding to cart… if nothing happens, check your console for errors.</p>
+  <script>
+  (async ()=>{
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const productId   = Number(params.get('pid'));
+      const sku         = params.get('sku');
+      // 1) get logged-in customer
+      const meResp = await fetch('https://theabcvault.com/api/storefront/customers/me', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!meResp.ok) throw new Error('Customer lookup failed: '+meResp.status);
+      const meJson = await meResp.json();
+      const customerId    = meJson.data.id;
+      const customerEmail = meJson.data.email;
+      // 2) inventory check
+      const invResp = await fetch(
+        `https://abc.irishtitan.cloud/api/vault/inventory-check?sku:in=${encodeURIComponent(sku)}`
+      );
+      if (!invResp.ok) throw new Error('Inventory check failed: '+invResp.status);
+      const inv = await invResp.json();
+      if (!inv[0]?.has_inventory) {
+        alert('Product is out of stock.'); 
+        return;
+      }
+      // 3) create cart + add item
+      const cartResp = await fetch('https://theabcvault.com/api/storefront/carts', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          lineItems: [{ productId, quantity: 1 }]
+        })
+      });
+      if (!cartResp.ok) throw new Error('Cart creation failed: '+cartResp.status);
+      const cartJson = await cartResp.json();
+      const cartId   = cartJson.id;
+      // 4) reserve via vault API
+      const reserveResp = await fetch(
+        'https://abc.irishtitan.cloud/api/vault/cart-reserve', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+          cart_id:        cartId,
+          customer_id:    customerId,
+          customer_email: customerEmail,
+          product_id:     String(productId),
+          sku:            sku,
+          quantity:       1
+        })
+      });
+      if (!reserveResp.ok) throw new Error('Reserve failed: '+reserveResp.status);
+      // 5) redirect to live cart
+      window.location.href = 'https://theabcvault.com/cart.php';
+    }
+    catch (err) {
+      console.error(err);
+      alert('⚠️ Error: ' + err.message);
+    }
+  })();
+  </script>
 </body>
 </html>
